@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   publicDir: 'src/public',
-  base: './', // Use relative paths for assets
+  base: '/kanban/', // GitHub Pages base path
   server: {
     host: true, // Listen on all local IPs
     port: 5180,
