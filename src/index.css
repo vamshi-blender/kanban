@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Hide scrollbar for the main board while keeping functionality */
+.hide-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+/* Custom scrollbar styles for columns */
+.column-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.column-scroll::-webkit-scrollbar-track {
+  background: #181b21;
+  border-radius: 2px;
+}
+
+.column-scroll::-webkit-scrollbar-thumb {
+  background: #f43f5e;
+  border-radius: 2px;
+}
+
+.column-scroll::-webkit-scrollbar-thumb:hover {
+  background: #f43f5e;
+}
+
+/* Custom checkbox styles */
+input[type="checkbox"] {
+  accent-color: #f43f5e;
+}
+
+/* TipTap Editor Styles */
+.ProseMirror {
+  @apply text-white;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: #4b5563;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.ProseMirror p {
+  @apply mb-2;
+}
+
+.ProseMirror ul {
+  @apply list-disc pl-6 mb-2;
+}
+
+.ProseMirror ol {
+  @apply list-decimal pl-6 mb-2;
+}
+
+.ProseMirror strong {
+  @apply font-bold;
+}
+
+.ProseMirror em {
+  @apply italic;
+}

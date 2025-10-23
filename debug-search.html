@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Component Debug</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #000;
+            color: white;
+        }
+        .debug-container {
+            background: #181b21;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .search-container {
+            display: flex;
+            align-items: center;
+            position: relative;
+            margin: 20px 0;
+        }
+        .search-wrapper {
+            display: flex;
+            align-items: center;
+            transition: all 300ms ease-in-out;
+            height: 40px;
+            background: #181b21;
+            border-radius: 20px;
+            border: 1px solid transparent;
+        }
+        .search-wrapper:hover {
+            background: #1C1F26;
+            border-color: #2D3139;
+        }
+        .search-wrapper.expanded {
+            width: 288px;
+        }
+        .search-wrapper.collapsed {
+            width: 40px;
+        }
+        .search-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            flex-shrink: 0;
+            color: white;
+        }
+        .search-input {
+            flex: 1;
+            background: transparent;
+            color: white;
+            font-size: 14px;
+            border: none;
+            outline: none;
+            transition: all 300ms ease-in-out;
+        }
+        .search-input::placeholder {
+            color: #9ca3af;
+        }
+        .search-input.expanded {
+            opacity: 1;
+            padding-right: 16px;
+        }
+        .search-input.collapsed {
+            opacity: 0;
+            width: 0;
+        }
+        .state-display {
+            background: #2D3139;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .test-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .test-button {
+            background: #f43f5e;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .test-button:hover {
+            background: #fb7185;
+        }
+    </style>
+</head>
+<body>
+    <h1>Search Component Debug Test</h1>
+    
+    <div class="debug-container">
+        <h2>Search Component Test</h2>
+        <p>Test the search component behavior:</p>
+        
+        <div class="search-container">
+            <div id="searchWrapper" class="search-wrapper collapsed">
+                <div class="search-icon">🔍</div>
+                <input 
+                    id="searchInput" 
+                    type="text" 
+                    class="search-input collapsed"
+                    placeholder="Search by Issue ID, Summary, Assignee..."
+                />
+            </div>
+        </div>
+        
+        <div class="state-display" id="stateDisplay">
+            isExpanded: false<br>
+            isFocused: false<br>
+            isHovered: false<br>
+            searchValue: ""
+        </div>
+        
+        <div class="test-buttons">
+            <button class="test-button" onclick="simulateHover()">Simulate Hover</button>
+            <button class="test-button" onclick="simulateUnhover()">Simulate Unhover</button>
+            <button class="test-button" onclick="simulateFocus()">Simulate Focus</button>
+            <button class="test-button" onclick="simulateBlur()">Simulate Blur</button>
+            <button class="test-button" onclick="clearInput()">Clear Input</button>
+            <button class="test-button" onclick="resetState()">Reset</button>
+        </div>
+        
+        <div>
+            <h3>Test Scenario:</h3>
+            <ol>
+                <li>Click "Simulate Hover" → Should expand</li>
+                <li>Click "Simulate Focus" → Should stay expanded</li>
+                <li>Click "Simulate Unhover" → Should stay expanded (focused)</li>
+                <li>Click "Simulate Blur" → Should collapse (not focused, not hovered, empty)</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        // State variables
+        let isExpanded = false;
+        let isFocused = false;
+        let isHovered = false;
+        let searchValue = "";
+
+        // DOM elements
+        const searchWrapper = document.getElementById('searchWrapper');
+        const searchInput = document.getElementById('searchInput');
+        const stateDisplay = document.getElementById('stateDisplay');
+
+        // Update UI based on state
+        function updateUI() {
+            // Update visual state
+            if (isExpanded) {
+                searchWrapper.className = 'search-wrapper expanded';
+                searchInput.className = 'search-input expanded';
+            } else {
+                searchWrapper.className = 'search-wrapper collapsed';
+                searchInput.className = 'search-input collapsed';
+            }
+
+            // Update state display
+            stateDisplay.innerHTML = `
+                isExpanded: ${isExpanded}<br>
+                isFocused: ${isFocused}<br>
+                isHovered: ${isHovered}<br>
+                searchValue: "${searchValue}"
+            `;
+        }
+
+        // Check if should collapse
+        function checkCollapse() {
+            const shouldCollapse = !isFocused && !isHovered && !searchValue.trim();
+            
+            if (shouldCollapse && isExpanded) {
+                setTimeout(() => {
+                    // Re-check conditions after timeout
+                    const stillShouldCollapse = !isFocused && !isHovered && !searchValue.trim();
+                    if (stillShouldCollapse) {
+                        isExpanded = false;
+                        updateUI();
+                    }
+                }, 150);
+            }
+        }
+
+        // Event handlers
+        function simulateHover() {
+            isHovered = true;
+            isExpanded = true;
+            updateUI();
+        }
+
+        function simulateUnhover() {
+            isHovered = false;
+            checkCollapse();
+            updateUI();
+        }
+
+        function simulateFocus() {
+            isFocused = true;
+            isExpanded = true;
+            updateUI();
+        }
+
+        function simulateBlur() {
+            isFocused = false;
+            checkCollapse();
+            updateUI();
+        }
+
+        function clearInput() {
+            searchValue = "";
+            searchInput.value = "";
+            checkCollapse();
+            updateUI();
+        }
+
+        function resetState() {
+            isExpanded = false;
+            isFocused = false;
+            isHovered = false;
+            searchValue = "";
+            searchInput.value = "";
+            updateUI();
+        }
+
+        // Real event listeners for the input
+        searchInput.addEventListener('input', (e) => {
+            searchValue = e.target.value;
+            if (searchValue.trim()) {
+                isExpanded = true;
+            } else {
+                checkCollapse();
+            }
+            updateUI();
+        });
+
+        searchInput.addEventListener('focus', () => {
+            simulateFocus();
+        });
+
+        searchInput.addEventListener('blur', () => {
+            simulateBlur();
+        });
+
+        searchWrapper.addEventListener('mouseenter', () => {
+            simulateHover();
+        });
+
+        searchWrapper.addEventListener('mouseleave', () => {
+            simulateUnhover();
+        });
+
+        // Initialize
+        updateUI();
+    </script>
+</body>
+</html>
