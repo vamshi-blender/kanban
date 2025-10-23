@@ -7,7 +7,9 @@ import { saveApiKey, getApiKeyStatus, validateApiKeyFormat } from '../utils/apiK
 
 // Sprint name persistence utilities
 const SPRINT_NAME_KEY = 'kanban_sprint_name';
+const SPRINT_NAME_HISTORY_KEY = 'kanban_sprint_name_history';
 const DEFAULT_SPRINT_NAME = 'DAP - 26';
+const MAX_SPRINT_HISTORY = 10;
 
 // Search persistence utilities
 const SEARCH_VALUE_KEY = 'kanban_search_value';
@@ -27,6 +29,33 @@ const saveSprintName = (sprintName: string): void => {
   } catch (error) {
     console.error('Error saving sprint name to localStorage:', error);
   }
+};
+
+const getSprintNameHistory = (): string[] => {
+  try {
+    const saved = localStorage.getItem(SPRINT_NAME_HISTORY_KEY);
+    return saved ? JSON.parse(saved) : [DEFAULT_SPRINT_NAME];
+  } catch (error) {
+    console.error('Error loading sprint name history from localStorage:', error);
+    return [DEFAULT_SPRINT_NAME];
+  }
+};
+
+const saveSprintNameHistory = (history: string[]): void => {
+  try {
+    localStorage.setItem(SPRINT_NAME_HISTORY_KEY, JSON.stringify(history));
+  } catch (error) {
+    console.error('Error saving sprint name history to localStorage:', error);
+  }
+};
+
+const addToSprintNameHistory = (sprintName: string): void => {
+  if (!sprintName.trim()) return;
+
+  const history = getSprintNameHistory();
+  const filteredHistory = history.filter(name => name !== sprintName);
+  const newHistory = [sprintName, ...filteredHistory].slice(0, MAX_SPRINT_HISTORY);
+  saveSprintNameHistory(newHistory);
 };
 
 const getSavedSearchValue = (): string => {
@@ -92,6 +121,10 @@ export default function KanbanFilters({
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [sprintName, setSprintName] = useState(() => getSavedSprintName());
+  const [sprintNameDropdownOpen, setSprintNameDropdownOpen] = useState(false);
+  const [sprintNameHistory, setSprintNameHistory] = useState<string[]>(() => getSprintNameHistory());
+  const [isSprintNameHovered, setIsSprintNameHovered] = useState(false);
+  const [sprintNameInputChanged, setSprintNameInputChanged] = useState(false);
 
   // API Key management state
   const [isApiKeyExpanded, setIsApiKeyExpanded] = useState(false);
@@ -100,6 +133,7 @@ export default function KanbanFilters({
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const issueTypeRef = useRef<HTMLDivElement>(null);
   const assigneeRef = useRef<HTMLDivElement>(null);
+  const sprintNameRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [isIssueTypeHovered, setIsIssueTypeHovered] = useState(false);
   const [isAssigneeHovered, setIsAssigneeHovered] = useState(false);
@@ -160,6 +194,9 @@ export default function KanbanFilters({
       if (assigneeRef.current && !assigneeRef.current.contains(event.target as Node)) {
         setAssigneeDropdownOpen(false);
       }
+      if (sprintNameRef.current && !sprintNameRef.current.contains(event.target as Node)) {
+        setSprintNameDropdownOpen(false);
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -176,6 +213,24 @@ export default function KanbanFilters({
   const handleSprintNameChange = (newSprintName: string) => {
     setSprintName(newSprintName);
     saveSprintName(newSprintName);
+    setSprintNameInputChanged(true);
+  };
+
+  const handleSprintNameSelect = (selectedName: string) => {
+    setSprintName(selectedName);
+    saveSprintName(selectedName);
+    setSprintNameDropdownOpen(false);
+    setSprintNameInputChanged(false);
+    addToSprintNameHistory(selectedName);
+    setSprintNameHistory(getSprintNameHistory());
+  };
+
+  const handleSprintNameKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      addToSprintNameHistory(sprintName);
+      setSprintNameHistory(getSprintNameHistory());
+      handleRefresh();
+    }
   };
 
   const handleRefresh = async () => {
@@ -338,13 +393,64 @@ export default function KanbanFilters({
               of {tasks.length}
             </span>
           )}
-          <input
-            type="text"
-            value={sprintName}
-            onChange={(e) => handleSprintNameChange(e.target.value)}
-            className="bg-[#181b21] text-white px-3 py-1 rounded-lg border border-[#2D3139] text-sm focus:outline-none focus:border-rose-500 w-20"
-            placeholder="Sprint Name"
-          />
+
+          {/* Sprint Name with Dropdown */}
+          <div
+            ref={sprintNameRef}
+            className="relative"
+            onMouseEnter={() => setIsSprintNameHovered(true)}
+            onMouseLeave={() => {
+              setIsSprintNameHovered(false);
+              if (!sprintNameDropdownOpen) {
+                setTimeout(() => {
+                  if (!isSprintNameHovered) {
+                    setSprintNameDropdownOpen(false);
+                  }
+                }, 100);
+              }
+            }}
+          >
+            <input
+              type="text"
+              value={sprintName}
+              onChange={(e) => handleSprintNameChange(e.target.value)}
+              onKeyDown={handleSprintNameKeyPress}
+              onFocus={() => {
+                setSprintNameDropdownOpen(true);
+                setSprintNameInputChanged(false);
+              }}
+              className="bg-[#181b21] text-white px-3 py-1 rounded-lg border border-[#2D3139] text-sm focus:outline-none focus:border-rose-500 w-[90px]"
+              placeholder="Sprint Name"
+            />
+
+            {/* Sprint Name Dropdown */}
+            <div
+              className={`absolute top-full left-0 mt-2 w-48 rounded-lg shadow-lg z-20 bg-[#181b21] bg-opacity-70 backdrop-blur-md
+              transition-all duration-300 ease-in-out ${(sprintNameDropdownOpen || isSprintNameHovered) ? 'opacity-100 max-h-screen' : 'opacity-0 max-h-0 overflow-hidden'}`}
+              style={{ transitionProperty: 'opacity, max-height' }}
+            >
+              <div className="p-2 max-h-60 overflow-y-auto column-scroll">
+                {sprintNameHistory
+                  .filter(name => !sprintNameInputChanged || name.toLowerCase().includes(sprintName.toLowerCase()))
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((name, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handleSprintNameSelect(name)}
+                      className="flex items-center p-2 hover:bg-[#2D3139] rounded cursor-pointer"
+                    >
+                      <span className="text-sm text-white">{name}</span>
+                    </div>
+                  ))}
+                {sprintNameHistory.filter(name => !sprintNameInputChanged || name.toLowerCase().includes(sprintName.toLowerCase())).length === 0 && (
+                  <div className="p-2 text-sm text-gray-400 text-center">
+                    No matching sprint names
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
