@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { SortableContext, useSortable } from '@dnd-kit/sortable';
 import { Column, Id, Task } from '../types';
 import { CSS } from '@dnd-kit/utilities';
+import { Copy, Check } from 'lucide-react';
 import TaskCard from './TaskCard';
 
 interface Props {
@@ -12,6 +14,27 @@ interface Props {
   updatingTaskId?: Id | null;
 }
 
+function parseTaskContent(content: string) {
+  const lines = content.split('\n');
+  const data: { issueId?: string; summary?: string } = {};
+
+  lines.forEach(line => {
+    const [key, value] = line.split(': ');
+    if (key && value) {
+      switch(key.trim()) {
+        case 'Issue Id':
+          data.issueId = value.trim();
+          break;
+        case 'Summary':
+          data.summary = value.trim();
+          break;
+      }
+    }
+  });
+
+  return data;
+}
+
 export default function KanbanColumn({
   column,
   tasks,
@@ -20,6 +43,8 @@ export default function KanbanColumn({
   successTaskId,
   updatingTaskId,
 }: Props) {
+  const [isCopied, setIsCopied] = useState(false);
+
   // Debug logging for column highlighting
   if (column.isHighlighted) {
     console.log(`Column ${column.id} is highlighted:`, column.isHighlighted);
@@ -44,6 +69,21 @@ export default function KanbanColumn({
     transform: CSS.Transform.toString(transform),
   };
 
+  const handleCopyAll = async () => {
+    const tasksList = tasks.map(task => {
+      const taskData = parseTaskContent(task.content);
+      return `${taskData.issueId}: ${taskData.summary}`;
+    }).join('\n');
+
+    try {
+      await navigator.clipboard.writeText(tasksList);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -63,6 +103,17 @@ export default function KanbanColumn({
               {tasks.length}
             </span>
           </div>
+          <button
+            onClick={handleCopyAll}
+            className="rounded p-1 hover:bg-[#181b21] transition-colors duration-200"
+            title="Copy all tasks in this column"
+          >
+            {isCopied ? (
+              <Check className="h-4 w-4 text-green-500" />
+            ) : (
+              <Copy className="h-4 w-4 text-gray-400 hover:text-white" />
+            )}
+          </button>
         </div>
       </div>
 

@@ -216,13 +216,17 @@ export default function KanbanFilters({
     setSprintNameInputChanged(true);
   };
 
-  const handleSprintNameSelect = (selectedName: string) => {
+  const handleSprintNameSelect = async (selectedName: string) => {
     setSprintName(selectedName);
     saveSprintName(selectedName);
     setSprintNameDropdownOpen(false);
+    setIsSprintNameHovered(false);
     setSprintNameInputChanged(false);
     addToSprintNameHistory(selectedName);
     setSprintNameHistory(getSprintNameHistory());
+
+    // Call API refresh with the new sprint name
+    await handleRefresh(selectedName);
   };
 
   const handleSprintNameKeyPress = (e: React.KeyboardEvent) => {
@@ -233,13 +237,13 @@ export default function KanbanFilters({
     }
   };
 
-  const handleRefresh = async () => {
+  const handleRefresh = async (customSprintName?: string) => {
     setIsRefreshing(true);
     setRefreshError(null);
     setShowSuccess(false);
 
     try {
-      await onRefresh(sprintName);
+      await onRefresh(customSprintName || sprintName);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (error) {
