@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, RefreshCw, StopCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Search, RefreshCw, StopCircle } from 'lucide-react';
 import ReportTypeDropdown from '../components/attendance-report/ReportTypeDropdown';
 import DateInput from '../components/attendance-report/DateInput';
 import { fetchAttendanceReport, AttendanceRecord } from '../services/api';
@@ -175,6 +176,151 @@ const formatDate = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+const normalizeValue = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+
+const isMissingValue = (value: unknown): boolean => {
+  if (value === null || value === undefined) return true;
+  const normalized = normalizeValue(value);
+  return normalized === '' || normalized === '-' || normalized === 'null' || normalized === 'n/a' || normalized === 'na';
+};
+
+const parseDateFromRow = (value: unknown): Date | null => {
+  const raw = String(value ?? '').trim();
+  if (!raw || raw === '-') return null;
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]);
+    const day = Number(isoMatch[3]);
+    return new Date(year, month - 1, day);
+  }
+
+  const slashMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (slashMatch) {
+    const day = Number(slashMatch[1]);
+    const month = Number(slashMatch[2]);
+    const year = Number(slashMatch[3]);
+    return new Date(year, month - 1, day);
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const parseTimeForDate = (baseDate: Date, value: unknown): Date | null => {
+  const raw = String(value ?? '').trim();
+  if (!raw || raw === '-') return null;
+
+  if (raw.includes('T')) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  const match = raw.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3] ?? '0');
+  const meridiem = match[4]?.toLowerCase();
+  if ([hours, minutes, seconds].some(Number.isNaN)) return null;
+
+  let normalizedHours = hours;
+  if (meridiem) {
+    normalizedHours = hours % 12;
+    if (meridiem === 'pm') normalizedHours += 12;
+  }
+
+  return new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate(),
+    normalizedHours,
+    minutes,
+    seconds
+  );
+};
+
+const parseDurationToHours = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+  const raw = String(value).trim();
+  if (!raw || raw === '-') return null;
+
+  if (raw.includes(':')) {
+    const parts = raw.split(':').map(part => Number(part));
+    if (parts.some(Number.isNaN)) return null;
+    const [hours, minutes = 0, seconds = 0] = parts;
+    return hours + minutes / 60 + seconds / 3600;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isSameDay = (left: Date, right: Date): boolean =>
+  left.getFullYear() === right.getFullYear() &&
+  left.getMonth() === right.getMonth() &&
+  left.getDate() === right.getDate();
+
+type AttendanceHighlight = {
+  rowClassName: string;
+  attendanceCellClassName: string;
+};
+
+const getAttendanceHighlight = (row: AttendanceRecord, today: Date): AttendanceHighlight => {
+  const attendanceType = normalizeValue(row["Attendance Type"]);
+  const isAbsent = attendanceType === 'absent';
+  if (isAbsent) {
+    return {
+      rowClassName: '',
+      attendanceCellClassName: 'bg-rose-600 text-white'
+    };
+  }
+
+  const hasInTime = !isMissingValue(row["In Time"]);
+  if (!hasInTime) {
+    return { rowClassName: '', attendanceCellClassName: '' };
+  }
+
+  const logStatus = normalizeValue(row["Log Status"]);
+  if (logStatus.includes('not logged')) {
+    return { rowClassName: 'bg-[#4b1111]', attendanceCellClassName: '' };
+  }
+
+  if (logStatus === 'logged') {
+    const rowDate = parseDateFromRow(row["Date"]);
+    const isToday = rowDate ? isSameDay(rowDate, today) : false;
+    const totalLogHours = parseDurationToHours(row["Total Log Hours"]);
+    let totalHoursInOffice = parseDurationToHours(row["Total Hours"]);
+
+    if (isToday && rowDate) {
+      const inTime = parseTimeForDate(rowDate, row["In Time"]);
+      const outTime = !isMissingValue(row["Out Time"])
+        ? parseTimeForDate(rowDate, row["Out Time"])
+        : new Date();
+
+      if (inTime && outTime) {
+        let effectiveOutTime = outTime;
+        if (outTime.getTime() < inTime.getTime()) {
+          effectiveOutTime = new Date(outTime.getTime() + 24 * 60 * 60 * 1000);
+        }
+        totalHoursInOffice = (effectiveOutTime.getTime() - inTime.getTime()) / 36e5;
+      }
+    }
+
+    if (totalLogHours !== null && totalHoursInOffice !== null && totalLogHours < totalHoursInOffice) {
+      return { rowClassName: 'bg-[#35181b]', attendanceCellClassName: '' };
+    }
+  }
+
+  return { rowClassName: '', attendanceCellClassName: '' };
+};
+
 // Helper function to get date range based on selection
 const getDateRange = (selection: string): { from: string; to: string } => {
   const today = new Date();
@@ -218,6 +364,8 @@ const getDateRange = (selection: string): { from: string; to: string } => {
 };
 
 function Attendance() {
+  const navigate = useNavigate();
+
   // Initialize state from localStorage or defaults
   const [selectedReportType, setSelectedReportType] = useState(() => {
     const saved = getSavedReportType();
@@ -420,16 +568,27 @@ function Attendance() {
 
   // Get visible columns based on selection
   const visibleColumns = TABLE_COLUMNS.filter(col => selectedColumns.includes(col.key));
+  const today = new Date();
 
   return (
     <div className="h-screen bg-[#000] text-white overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="py-4 px-6 border-b border-[#181b21]">
-        <h1 className="text-xl font-semibold">Attendance & Worklog Report</h1>
+      <div className="py-2 px-2 border-b border-[#181b21]">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="p-2 rounded-xl hover:bg-[#141414] transition-colors"
+            aria-label="Back to dashboard"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <h1 className="text-xl font-semibold">Attendance & Worklog Report</h1>
+        </div>
       </div>
 
       {/* Filter Section */}
-      <div className="px-6 py-4">
+      <div className="px-6 py-2">
         <div className="flex items-center justify-end gap-4">
           {/* Column Selection Dropdown */}
           <div
@@ -456,7 +615,7 @@ function Attendance() {
 
             {/* Column Dropdown */}
             <div
-              className={`absolute top-full right-0 mt-2 w-64 rounded-lg shadow-lg z-20 bg-[#181b21] bg-opacity-70 backdrop-blur-md
+              className={`absolute top-full right-0 mt-2 w-64 rounded-lg shadow-2xl z-20 bg-[#181b21] bg-opacity-50 backdrop-blur-md
               transition-all duration-300 ease-in-out ${(columnDropdownOpen || isColumnHovered) ? 'opacity-100 max-h-screen' : 'opacity-0 max-h-0 overflow-hidden'}`}
               style={{ transitionProperty: 'opacity, max-height' }}
             >
@@ -551,10 +710,10 @@ function Attendance() {
 
       {/* Table Section */}
       <div className="flex-1 px-6 pb-6 overflow-hidden">
-        <div className="h-full bg-[#181b21] rounded-lg border border-[#2D3139] overflow-auto column-scroll">
+        <div className="relative h-full bg-[#181b21] rounded-lg border border-[#2D3139]">
           {/* Error State */}
           {error && !isLoading && (
-            <div className="flex items-center justify-center h-full">
+            <div className="absolute inset-0 flex items-center justify-center h-full">
               <div className="text-center">
                 <p className="text-rose-500 mb-2">{error}</p>
                 <button
@@ -567,46 +726,62 @@ function Attendance() {
             </div>
           )}
 
-          {/* Empty State */}
-          {!error && attendanceData.length === 0 && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-gray-400">
-                <p className="mb-2">No attendance data</p>
-                <p className="text-sm">Select a date range and click Search to load data</p>
-              </div>
-            </div>
-          )}
-
           {/* Data Table */}
-          {!error && attendanceData.length > 0 && (
-            <table className="w-max min-w-full">
-              <thead className="sticky top-0 bg-[#181b21] z-10">
-                <tr className="border-b border-[#2D3139]">
-                  {visibleColumns.map((column) => (
-                    <th
-                      key={column.key}
-                      className="text-left px-4 py-3 text-sm font-medium text-gray-400 whitespace-nowrap"
-                    >
-                      {column.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {attendanceData.map((row, index) => (
-                  <tr key={index} className="border-b border-[#2D3139] hover:bg-[#1C1F26]">
-                    {visibleColumns.map((column) => (
-                      <td
-                        key={column.key}
-                        className="px-4 py-3 text-sm text-white whitespace-nowrap"
-                      >
-                        {row[column.key as keyof AttendanceRecord] ?? '-'}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {!error && (
+            <>
+              <div className="h-full overflow-auto column-scroll">
+                <table className="w-max min-w-full">
+                  <thead className="sticky top-0 bg-[#181b21] z-10">
+                    <tr className="border-b border-[#2D3139]">
+                      {visibleColumns.map((column) => (
+                        <th
+                          key={column.key}
+                          className="text-left px-4 py-3 text-sm font-medium text-gray-400 whitespace-nowrap"
+                        >
+                          {column.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attendanceData.map((row, index) => {
+                      const highlight = getAttendanceHighlight(row, today);
+                      const rowClassName = highlight.rowClassName
+                        ? `border-b border-[#2D3139] ${highlight.rowClassName}`
+                        : 'border-b border-[#2D3139] hover:bg-[#1C1F26]';
+
+                      return (
+                        <tr key={index} className={rowClassName}>
+                          {visibleColumns.map((column) => {
+                            const isAttendanceType = column.key === 'Attendance Type';
+                            const cellClassName = isAttendanceType && highlight.attendanceCellClassName
+                              ? `px-4 py-3 text-sm text-white whitespace-nowrap ${highlight.attendanceCellClassName}`
+                              : 'px-4 py-3 text-sm text-white whitespace-nowrap';
+
+                            return (
+                              <td
+                                key={column.key}
+                                className={cellClassName}
+                              >
+                                {row[column.key as keyof AttendanceRecord] ?? '-'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {attendanceData.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center text-center text-gray-400 pointer-events-none">
+                  <div>
+                    <div className="mb-1">No attendance data</div>
+                    <div className="text-xs">Select a date range and click Search to load data</div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -37,6 +37,22 @@ input[type="checkbox"] {
   accent-color: #f43f5e;
 }
 
+/* Custom date input styles */
+input[type="date"] {
+  accent-color: #f43f5e;
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  display: none;
+}
+
+input[type="date"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-clear-button {
+  display: none;
+}
+
 /* TipTap Editor Styles */
 .ProseMirror {
   @apply text-white;

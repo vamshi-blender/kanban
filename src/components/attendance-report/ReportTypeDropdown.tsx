@@ -51,7 +51,7 @@ export default function ReportTypeDropdown({ options, value, onChange, hiddenOpt
 
       {/* Dropdown Menu */}
       <div
-        className={`absolute top-full right-0 mt-2 w-48 rounded-lg shadow-lg z-20 bg-[#181b21] bg-opacity-70 backdrop-blur-md
+        className={`absolute top-full right-0 mt-2 w-48 rounded-lg shadow-xl z-20 bg-[#181b21] bg-opacity-60 backdrop-blur-md
         transition-all duration-300 ease-in-out ${(dropdownOpen || isDropdownHovered) ? 'opacity-100 max-h-screen' : 'opacity-0 max-h-0 overflow-hidden'}`}
         style={{ transitionProperty: 'opacity, max-height' }}
       >
