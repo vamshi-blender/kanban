@@ -432,6 +432,177 @@ export async function updateTaskStatus(task: Task, newStatus: string): Promise<U
   }
 }
 
+// Attendance Report Types
+interface AttendanceReportFilter {
+  ElementType: string;
+  LabelName: string;
+  Condition: string;
+  Type: string;
+  DefaultValue: string;
+  SecondValue: string;
+  MappingType: string;
+}
+
+interface AttendanceReportPayload {
+  reportId: string;
+  skip: number;
+  top: number;
+  orderByFields: string;
+  filters: AttendanceReportFilter[];
+  groupAggregate: null;
+  isShowGrid: boolean;
+}
+
+export interface AttendanceRecord {
+  "S No": number;
+  "Employee Code": string;
+  "Attendance Id": string;
+  "Employee Name": string;
+  "Department": string;
+  "Reporting Manager Name": string;
+  "Employee Email Id": string;
+  "Date": string;
+  "Day": string;
+  "In Time": string;
+  "Out Time": string;
+  "Total Hours": string;
+  "Greater than 10AM and Less than 5PM": string;
+  "Less than 7 Hours": string;
+  "Attendance Type": string;
+  "Balance Day Period": string;
+  "Application 1 Status": string;
+  "Application 2 Status": string;
+  "Application 1 Pending With": string;
+  "Application 2 Pending With": string;
+  "Punch Status": string;
+  "Total Log Hours": number;
+  "Log Hours Before 11 AM": number;
+  "Log Hours After 11 AM": number;
+  "First Log DateTime": string;
+  "Last Log DateTime": string;
+  "cutoffdatetime": string;
+  "No of Times Logged": number;
+  "Log Status": string;
+  "Month": string;
+  "Year": string;
+  "First Half": string;
+  "Second Half": string;
+}
+
+interface AttendanceReportResponse {
+  Status: boolean;
+  results: string;
+  __count: number;
+}
+
+/**
+ * Fetches attendance report data for a given date range
+ * @param fromDate - Start date in YYYY-MM-DD format
+ * @param toDate - End date in YYYY-MM-DD format
+ * @param signal - Optional AbortSignal to cancel the request
+ * @returns Array of attendance records
+ */
+export async function fetchAttendanceReport(fromDate: string, toDate: string, signal?: AbortSignal): Promise<AttendanceRecord[]> {
+  const ATTENDANCE_API_URL = 'https://homeapi.quixy.com/api/Report/GetGridReportData';
+  const REPORT_ID = '12092025-150408108-76d54cf3-0490-441a-bb2d-77eefd4f9ece';
+  const PAGE_SIZE = 50;
+
+  let skip = 0;
+  let allRecords: AttendanceRecord[] = [];
+  let totalCount = 0;
+  let hasMore = true;
+
+  // Convert dates to ISO format with time (6:30 AM UTC = 12:00 PM IST start of day)
+  const formatDateForApi = (dateStr: string): string => {
+    // dateStr is in YYYY-MM-DD format
+    return `${dateStr}T06:30:00.000Z`;
+  };
+
+  try {
+    console.log(`Fetching attendance report from ${fromDate} to ${toDate}`);
+
+    while (hasMore) {
+      const payload: AttendanceReportPayload = {
+        reportId: REPORT_ID,
+        skip: skip,
+        top: PAGE_SIZE,
+        orderByFields: "",
+        filters: [
+          {
+            ElementType: "Date",
+            LabelName: "Fromdate",
+            Condition: "Exact Date",
+            Type: "textType",
+            DefaultValue: formatDateForApi(fromDate),
+            SecondValue: "",
+            MappingType: "Mapped"
+          },
+          {
+            ElementType: "Date",
+            LabelName: "Todate",
+            Condition: "Exact Date",
+            Type: "textType",
+            DefaultValue: formatDateForApi(toDate),
+            SecondValue: "",
+            MappingType: "Mapped"
+          }
+        ],
+        groupAggregate: null,
+        isShowGrid: false
+      };
+
+      console.log(`Fetching attendance page: skip=${skip}, top=${PAGE_SIZE}`);
+
+      const response = await fetch(ATTENDANCE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getApiToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: signal, // Pass abort signal to fetch
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Attendance API error:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const data: AttendanceReportResponse = await response.json();
+
+      // Note: This API returns Status: false even with valid results
+      // So we check for the presence of results instead
+      if (!data.results) {
+        throw new Error('Attendance API returned no results');
+      }
+
+      // Store total count from first response
+      if (skip === 0) {
+        totalCount = data.__count;
+        console.log(`Total attendance records available: ${totalCount}`);
+      }
+
+      // Parse the results string into an array of records
+      const records: AttendanceRecord[] = JSON.parse(data.results);
+      console.log(`Fetched ${records.length} attendance records in this batch`);
+
+      // Add to our collection
+      allRecords = [...allRecords, ...records];
+
+      // Check if we have more pages to fetch
+      skip += PAGE_SIZE;
+      hasMore = allRecords.length < totalCount && records.length === PAGE_SIZE;
+    }
+
+    console.log(`Finished fetching all attendance records. Total: ${allRecords.length}`);
+    return allRecords;
+  } catch (error) {
+    console.error('Error fetching attendance report:', error);
+    throw error;
+  }
+}
+
 export async function checkTaskStatus(issueType: string, currentStatus: string, projectId?: string): Promise<StatusCheckResponse> {
   const STATUS_CHECK_URL = 'https://homeapi.quixy.com/api/DataTable/GetDataTableDataByReference';
 
