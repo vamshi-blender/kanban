@@ -70,6 +70,7 @@ function parseTaskContent(content: string) {
 
 export default function TaskCard({ task, onStatusCheckResult, isHighlighted, isSuccess, isUpdating }: Props) {
   const [isCopied, setIsCopied] = useState(false);
+  const [isIssueIdCopied, setIsIssueIdCopied] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const { getUserPhoto, loadUserPhoto } = useUserPhotos();
   const taskData = parseTaskContent(task.content);
@@ -106,13 +107,27 @@ export default function TaskCard({ task, onStatusCheckResult, isHighlighted, isS
 
   const handleCopy = async () => {
     const textToCopy = `${taskData.issueId}: ${taskData.summary}`;
-    
+
     try {
       await navigator.clipboard.writeText(textToCopy);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy text: ', err);
+    }
+  };
+
+  const handleIssueIdCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!taskData.issueId) return;
+
+    try {
+      await navigator.clipboard.writeText(taskData.issueId);
+      setIsIssueIdCopied(true);
+      setTimeout(() => setIsIssueIdCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy Issue ID: ', err);
     }
   };
 
@@ -214,7 +229,15 @@ export default function TaskCard({ task, onStatusCheckResult, isHighlighted, isS
       <div className="p-3 border-b border-gray-700">
         <div className="flex justify-between items-center mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-gray-400 text-xs font-mono">{taskData.issueId}</span>
+            <span
+              onClick={handleIssueIdCopy}
+              className={`text-xs font-mono cursor-pointer transition-colors duration-200 ${
+                isIssueIdCopied ? 'text-green-500' : 'text-gray-400 hover:text-white'
+              }`}
+              title="Click to copy Issue ID"
+            >
+              {taskData.issueId}
+            </span>
             {isUpdating && (
               <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
             )}

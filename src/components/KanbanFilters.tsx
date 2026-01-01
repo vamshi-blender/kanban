@@ -456,7 +456,7 @@ export default function KanbanFilters({
           </div>
 
           <button
-            onClick={handleRefresh}
+            onClick={() => handleRefresh()}
             disabled={isRefreshing}
             className={`
               p-2 rounded-full transition-colors duration-200 relative group
