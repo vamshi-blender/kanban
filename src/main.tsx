@@ -12,7 +12,7 @@ const msalInstance = new PublicClientApplication(msalConfig);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <MsalProvider instance={msalInstance}>
         <UserPhotosProvider>
           <App />
