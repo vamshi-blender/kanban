@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Task, IssueType, BookmarkFilter } from '../types';
-import { Search, X, Bookmark, PenLine, RefreshCw, Check, XCircle, ListRestart, Key } from 'lucide-react';
+import { Search, X, Bookmark, CalendarClock, RefreshCw, Check, XCircle, ListRestart, Key } from 'lucide-react';
 import UserAvatar from './UserAvatar';
-import NotesEditor from './NotesEditor';
 import { saveApiKey, getApiKeyStatus, validateApiKeyFormat } from '../utils/apiKeyManager';
 
 // Sprint name persistence utilities
 const SPRINT_NAME_KEY = 'kanban_sprint_name';
 const SPRINT_NAME_HISTORY_KEY = 'kanban_sprint_name_history';
-const DEFAULT_SPRINT_NAME = 'DAP - 26';
+const DEFAULT_SPRINT_NAME = 'DAP - 45';
 const MAX_SPRINT_HISTORY = 10;
 
 // Search persistence utilities
@@ -116,7 +116,7 @@ export default function KanbanFilters({
   const [issueTypeDropdownOpen, setIssueTypeDropdownOpen] = useState(false);
   const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState('');
-  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -588,13 +588,13 @@ export default function KanbanFilters({
           </div>
         </div>
 
-        {/* Notes Button */}
+        {/* Attendance Button */}
         <button
-          onClick={() => setIsNotesOpen(true)}
+          onClick={() => navigate('/attendance')}
           className="p-2 rounded-full transition-colors duration-200 text-white bg-[#181b21] hover:bg-[#1C1F26]"
-          title="Open Notes"
+          title="Open Attendance"
         >
-          <PenLine
+          <CalendarClock
             size={16}
             className="transition-transform duration-200 hover:scale-110"
           />
@@ -770,8 +770,6 @@ export default function KanbanFilters({
         <UserAvatar />
       </div>
 
-      {/* Notes Editor Modal */}
-      <NotesEditor isOpen={isNotesOpen} onClose={() => setIsNotesOpen(false)} />
     </>
   );
 }
