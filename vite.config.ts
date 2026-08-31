@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   publicDir: 'src/public',
-  base: mode === 'production' ? '/kb2/' : '/', // GitHub Pages path
+  base: mode === 'production' ? '/kanban/' : '/', // GitHub Pages path
   server: {
     host: true, // Listen on all local IPs
     port: 5180,
