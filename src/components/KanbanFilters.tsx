@@ -210,6 +210,29 @@ export default function KanbanFilters({
     }
   }, []);
 
+  // Ctrl/Cmd+F focuses the in-app search instead of the browser's find bar
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsSearchExpanded(true);
+        setSearchFocusRequest((n) => n + 1);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Focus after the input has rendered (it only mounts while expanded)
+  useEffect(() => {
+    if (searchFocusRequest > 0) {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }
+  }, [searchFocusRequest]);
+
   const handleSprintNameChange = (newSprintName: string) => {
     setSprintName(newSprintName);
     saveSprintName(newSprintName);
@@ -562,6 +585,16 @@ export default function KanbanFilters({
                 onChange={(e) => handleSearchChange(e.target.value)}
                 onFocus={handleSearchFocus}
                 onBlur={handleSearchBlur}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    // Discard the search and close it
+                    handleSearchChange('');
+                    setIsSearchHovered(false);
+                    setIsSearchFocused(false);
+                    setIsSearchExpanded(false);
+                    e.currentTarget.blur();
+                  }
+                }}
                 placeholder="Search by Issue ID, Summary, Assignee..."
                 className={`
                   flex-1 bg-transparent text-white text-sm placeholder-gray-400
