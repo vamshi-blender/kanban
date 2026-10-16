@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, RefreshCw, StopCircle } from 'lucide-react';
 import ReportTypeDropdown from '../components/attendance-report/ReportTypeDropdown';
-import DateInput from '../components/attendance-report/DateInput';
+import DateRangePicker from '../components/attendance-report/DateRangePicker';
 import { fetchAttendanceReport, AttendanceRecord } from '../services/api';
 
 const REPORT_TYPES = ['This Week', 'Last Week', 'Today', 'Yesterday', 'Custom Date'];
@@ -455,15 +455,9 @@ function Attendance() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleFromDateChange = (value: string) => {
-    setFromDate(value);
-    if (selectedReportType !== 'Custom Date') {
-      setSelectedReportType('Custom Date');
-    }
-  };
-
-  const handleToDateChange = (value: string) => {
-    setToDate(value);
+  const handleDateRangeChange = (from: string, to: string) => {
+    setFromDate(from);
+    setToDate(to);
     if (selectedReportType !== 'Custom Date') {
       setSelectedReportType('Custom Date');
     }
@@ -662,16 +656,10 @@ function Attendance() {
             hiddenOptions={['Custom Date']}
           />
 
-          <DateInput
-            label="From"
-            value={fromDate}
-            onChange={handleFromDateChange}
-          />
-
-          <DateInput
-            label="To"
-            value={toDate}
-            onChange={handleToDateChange}
+          <DateRangePicker
+            from={fromDate}
+            to={toDate}
+            onChange={handleDateRangeChange}
           />
 
           {/* Search Button */}
