@@ -45,15 +45,18 @@ test('starts both reports before either responds, then joins by India date', asy
   assert.equal(rows[0]['Punch Status'], undefined);
 });
 
-test('keeps attendance-only and worklog-only dates without inventing attendance', async () => {
+test('marks worklog-only rows absent without adding missing dates or losing logged hours', async () => {
   mockReports([attendance()], [worklog('2026-11-09T18:30:00', '2')]);
   const rows = await fetchFastAttendanceReport('2026-11-09', '2026-11-15', 'test-token');
+  assert.equal(rows.length, 2);
   assert.equal(rows[0].Date, '10-Nov-2026');
+  assert.equal(rows[0]['Attendance Type'], 'Absent');
   assert.equal(rows[0]['In Time'], undefined);
   assert.equal(rows[0]['Total Hours'], undefined);
   assert.equal(rows[0]['Total Log Hours'], 2);
   assert.equal(rows[1]['Log Status'], 'Not Logged');
   assert.equal(rows[1]['Total Log Hours'], 0);
+  assert.equal(rows[1]['Attendance Type'], undefined);
 });
 
 test('paginates before summing decimal hours', async () => {

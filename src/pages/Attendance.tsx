@@ -768,7 +768,12 @@ function Attendance() {
                                 key={column.key}
                                 className={cellClassName}
                               >
-                                {row[column.key as keyof AttendanceRecord] ?? '-'}
+                                {column.key === 'Date' && row['Attendance Type'] === 'Absent' && !selectedColumns.includes('Attendance Type') ? (
+                                  <span className="inline-flex items-center gap-2">
+                                    {row.Date}
+                                    <span className="rounded bg-rose-600 px-1.5 py-0.5 text-xs text-white">Absent</span>
+                                  </span>
+                                ) : row[column.key as keyof AttendanceRecord] ?? '-'}
                               </td>
                             );
                           })}

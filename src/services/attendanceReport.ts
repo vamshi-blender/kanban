@@ -75,7 +75,7 @@ function text(value: unknown): string | undefined {
 }
 
 /** Fetch both user-scoped feeds concurrently, then join by India calendar day.
- * No worklog means zero logged hours; no attendance means unknown attendance. */
+ * Worklog-only dates are marked Absent; dates with no records are not added. */
 export async function fetchFastAttendanceReport(fromDate: string, toDate: string, token: string, signal?: AbortSignal): Promise<AttendanceRecord[]> {
   const start = parseDate(fromDate), end = parseDate(toDate);
   if (start > end) throw new Error('The start date must be on or before the end date.');
@@ -121,7 +121,7 @@ export async function fetchFastAttendanceReport(fromDate: string, toDate: string
           !Number.isFinite(Number(rawHours)) || Number(rawHours) < 0) throw new Error('PMS returned invalid worklog hours.');
       if (date < fromDate || date > toDate) continue;
       const row = byDate.get(date) ?? { Date: date, 'Employee Name': text(log.Name), Department: text(log.Department),
-        'Employee Email Id': text(log['Email Id']), 'Total Log Hours': 0, 'No of Times Logged': 0 };
+        'Employee Email Id': text(log['Email Id']), 'Attendance Type': 'Absent', 'Total Log Hours': 0, 'No of Times Logged': 0 };
       row['Total Log Hours'] = Number(row['Total Log Hours'] ?? 0) + Number(rawHours);
       if (!Number.isFinite(row['Total Log Hours'])) throw new Error('PMS returned invalid total worklog hours.');
       row['No of Times Logged'] = Number(row['No of Times Logged'] ?? 0) + 1;
