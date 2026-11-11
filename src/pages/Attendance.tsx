@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, RefreshCw, StopCircle } from 'lucide-react';
 import ReportTypeDropdown from '../components/attendance-report/ReportTypeDropdown';
 import DateRangePicker from '../components/attendance-report/DateRangePicker';
-import { fetchAttendanceWithColumns, type AttendanceRecord } from '../services/api';
-import { FAST_ATTENDANCE_COLUMNS, needsDetailedAttendance } from '../services/attendanceReport';
+import WorklogDetailsDialog from '../components/attendance-report/WorklogDetailsDialog';
+import { fetchAttendanceWithColumns, fetchDayWorklogs, type AttendanceRecord } from '../services/api';
+import { completeAttendanceWeekdays, FAST_ATTENDANCE_COLUMNS, needsDetailedAttendance, type WorklogEntry } from '../services/attendanceReport';
 
 const REPORT_TYPES = ['This Week', 'Last Week', 'Today', 'Yesterday', 'Custom Date'];
 
@@ -409,7 +410,7 @@ function Attendance() {
     if (savedData && lastFetchDates && savedDates &&
         lastFetchDates.from === savedDates.from &&
         lastFetchDates.to === savedDates.to) {
-      return savedData;
+      try { return completeAttendanceWeekdays(savedData, savedDates.from, savedDates.to); } catch { return []; }
     }
     return [];
   });
@@ -425,6 +426,41 @@ function Attendance() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const elapsedTimerRef = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
+  const [selectedWorklogRow, setSelectedWorklogRow] = useState<AttendanceRecord | null>(null);
+  const [worklogEntries, setWorklogEntries] = useState<WorklogEntry[]>([]);
+  const [worklogLoading, setWorklogLoading] = useState(false);
+  const [worklogError, setWorklogError] = useState<string | null>(null);
+  const worklogAbortRef = useRef<AbortController | null>(null);
+  const worklogCacheRef = useRef(new Map<string, WorklogEntry[]>());
+
+  const closeWorklogDetails = () => {
+    worklogAbortRef.current?.abort();
+    worklogAbortRef.current = null;
+    setSelectedWorklogRow(null);
+  };
+
+  const openWorklogDetails = async (row: AttendanceRecord) => {
+    worklogAbortRef.current?.abort();
+    worklogAbortRef.current = null;
+    setSelectedWorklogRow(row);
+    setWorklogError(null);
+    setWorklogEntries([]);
+    const cached = row.worklogs ?? worklogCacheRef.current.get(row.Date);
+    if (cached) { setWorklogEntries(cached); setWorklogLoading(false); return; }
+    const controller = new AbortController();
+    worklogAbortRef.current = controller;
+    setWorklogLoading(true);
+    try {
+      const entries = await fetchDayWorklogs(row.Date, controller.signal);
+      if (controller.signal.aborted || worklogAbortRef.current !== controller) return;
+      worklogCacheRef.current.set(row.Date, entries);
+      setWorklogEntries(entries);
+    } catch (error) {
+      if (!controller.signal.aborted) setWorklogError(error instanceof Error ? error.message : 'Could not load worklogs.');
+    } finally {
+      if (worklogAbortRef.current === controller) { setWorklogLoading(false); worklogAbortRef.current = null; }
+    }
+  };
 
   // Save columns to localStorage when they change
   useEffect(() => {
@@ -507,6 +543,8 @@ function Attendance() {
       }
 
       setAttendanceData(data);
+      worklogCacheRef.current.clear();
+      closeWorklogDetails();
       setLoadedDetailLevel(detailLevel);
 
       // Save to localStorage for persistence
@@ -551,6 +589,7 @@ function Attendance() {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      worklogAbortRef.current?.abort();
     };
   }, []);
 
@@ -762,6 +801,7 @@ function Attendance() {
                             const cellClassName = isAttendanceType && highlight.attendanceCellClassName
                               ? `px-4 py-3 text-sm text-white whitespace-nowrap ${highlight.attendanceCellClassName}`
                               : 'px-4 py-3 text-sm text-white whitespace-nowrap';
+                            const cellValue = row[column.key as keyof AttendanceRecord];
 
                             return (
                               <td
@@ -773,7 +813,12 @@ function Attendance() {
                                     {row.Date}
                                     <span className="rounded bg-rose-600 px-1.5 py-0.5 text-xs text-white">Absent</span>
                                   </span>
-                                ) : row[column.key as keyof AttendanceRecord] ?? '-'}
+                                ) : column.key === 'Total Log Hours' ? (
+                                  row.futurePlaceholder ? '-' : <button type="button" className="rounded px-1 text-rose-300 underline decoration-rose-400/40 underline-offset-4 hover:text-rose-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400"
+                                    aria-label={`View worklogs for ${row.Date}`} onClick={() => void openWorklogDetails(row)}>
+                                    {row['Total Log Hours']}
+                                  </button>
+                                ) : typeof cellValue === 'string' || typeof cellValue === 'number' ? cellValue : '-'}
                               </td>
                             );
                           })}
@@ -795,6 +840,8 @@ function Attendance() {
           )}
         </div>
       </div>
+      {selectedWorklogRow && <WorklogDetailsDialog date={selectedWorklogRow.Date} entries={worklogEntries} loading={worklogLoading} error={worklogError}
+        onClose={closeWorklogDetails} onRetry={() => void openWorklogDetails(selectedWorklogRow)} />}
     </div>
   );
 }

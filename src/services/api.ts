@@ -2,7 +2,7 @@ import { Task } from '../types';
 import { PublicClientApplication } from "@azure/msal-browser";
 import { msalConfig } from "../config/authConfig";
 import { getApiKey } from '../utils/apiKeyManager';
-import { fetchFastAttendanceReport, needsDetailedAttendance } from './attendanceReport';
+import { completeAttendanceWeekdays, fetchFastAttendanceReport, fetchWorklogDetails, needsDetailedAttendance, type WorklogEntry } from './attendanceReport';
 
 const API_URL = 'https://homeapi.quixy.com/api/Report/GetViewResult';
 
@@ -495,6 +495,9 @@ interface DetailedAttendanceRecord {
 export interface AttendanceRecord extends Partial<DetailedAttendanceRecord> {
   "Date": string;
   "Total Log Hours": number;
+  attendanceMissing?: boolean;
+  futurePlaceholder?: boolean;
+  worklogs?: WorklogEntry[];
 }
 
 interface AttendanceReportResponse {
@@ -516,8 +519,12 @@ export async function fetchAttendanceReport(fromDate: string, toDate: string, si
 
 export async function fetchAttendanceWithColumns(fromDate: string, toDate: string, columns: readonly string[], signal?: AbortSignal): Promise<AttendanceRecord[]> {
   return needsDetailedAttendance(columns)
-    ? fetchDetailedAttendanceReport(fromDate, toDate, signal)
+    ? completeAttendanceWeekdays(await fetchDetailedAttendanceReport(fromDate, toDate, signal), fromDate, toDate)
     : fetchAttendanceReport(fromDate, toDate, signal);
+}
+
+export async function fetchDayWorklogs(date: string, signal?: AbortSignal): Promise<WorklogEntry[]> {
+  return fetchWorklogDetails(date, getApiToken(), signal);
 }
 
 async function fetchDetailedAttendanceReport(fromDate: string, toDate: string, signal?: AbortSignal): Promise<AttendanceRecord[]> {

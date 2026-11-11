@@ -21,6 +21,13 @@ export function needsDetailedAttendance(columns: readonly string[]): boolean {
 
 type ReportRow = Record<string, unknown>;
 
+export interface WorklogEntry {
+  issueId?: string;
+  category?: string;
+  hours: number;
+  description?: string;
+}
+
 function parseDate(date: string): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Select dates in YYYY-MM-DD format.');
   const value = Date.parse(`${date}T00:00:00Z`);
@@ -74,8 +81,69 @@ function text(value: unknown): string | undefined {
   return value === null || value === undefined ? undefined : String(value);
 }
 
+export function attendanceDateKey(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) { parseDate(value); return value; }
+  const match = /^(\d{2})-([A-Za-z]{3})-(\d{4})$/.exec(value);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (!match || !months.includes(match[2])) throw new Error('PMS returned an invalid attendance date.');
+  const date = `${match[3]}-${String(months.indexOf(match[2]) + 1).padStart(2, '0')}-${match[1]}`;
+  parseDate(date);
+  return date;
+}
+
+/** Fill weekdays only; weekends are retained only when a report returned them.
+ * A weekday without attendance is Absent through today (India time). */
+export function completeAttendanceWeekdays(records: AttendanceRecord[], fromDate: string, toDate: string, now = new Date()): AttendanceRecord[] {
+  const start = parseDate(fromDate), end = parseDate(toDate);
+  if (start > end || (end - start) / DAY_MS >= 366) throw new Error('Select an ordered date range of at most 366 days.');
+  const byDate = new Map(records.map(row => [attendanceDateKey(row.Date), row]));
+  const today = new Date(now.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+  const rows: AttendanceRecord[] = [];
+  for (let milliseconds = end; milliseconds >= start; milliseconds -= DAY_MS) {
+    const value = new Date(milliseconds), date = value.toISOString().slice(0, 10);
+    const existing = byDate.get(date);
+    if (!existing && (value.getUTCDay() === 0 || value.getUTCDay() === 6)) continue;
+    const row: AttendanceRecord = existing ? { ...existing } : {
+      Date: date, 'Total Log Hours': 0, 'No of Times Logged': 0, attendanceMissing: true, worklogs: [],
+    };
+    if (row.attendanceMissing) row['Attendance Type'] = date <= today ? 'Absent' : undefined;
+    if (!existing || existing.futurePlaceholder) row['Log Status'] = date <= today ? 'Not Logged' : undefined;
+    rows.push({ ...row, futurePlaceholder: (!existing || existing.futurePlaceholder === true) && date > today,
+      Date: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(value).replace(/ /g, '-'),
+      Day: new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'UTC' }).format(value),
+      Month: new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(value), Year: String(value.getUTCFullYear()),
+      'S No': rows.length + 1, 'Total Log Hours': Math.round(row['Total Log Hours'] * 1e8) / 1e8,
+    });
+  }
+  return rows;
+}
+
+function logEntry(log: ReportRow): WorklogEntry {
+  const rawHours = log['Worklog Hours'];
+  if ((typeof rawHours !== 'number' && (typeof rawHours !== 'string' || !/^\d+(\.\d+)?$/.test(rawHours))) ||
+      !Number.isFinite(Number(rawHours)) || Number(rawHours) < 0) throw new Error('PMS returned invalid worklog hours.');
+  return { issueId: text(log['Issue Id']), category: text(log['Worklog Category']), hours: Number(rawHours), description: text(log['Worklog Description']) };
+}
+
+/** Used for older cached/detailed rows whose worklog entries were not loaded. */
+export async function fetchWorklogDetails(dateValue: string, token: string, signal?: AbortSignal): Promise<WorklogEntry[]> {
+  const date = attendanceDateKey(dateValue), start = parseDate(date);
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  try {
+    const logs = await fetchReport(WORKLOG_REPORT, 'Worklog Date', new Date(start - IST_OFFSET_MS).toISOString().replace('.000Z', '.00'),
+      new Date(start + DAY_MS - IST_OFFSET_MS - 1).toISOString().slice(0, -1), token, controller.signal);
+    controller.signal.throwIfAborted();
+    return logs.filter(log => worklogDate(log['Worklog Date']) === date).map(logEntry);
+  } finally {
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
 /** Fetch both user-scoped feeds concurrently, then join by India calendar day.
- * Worklog-only dates are marked Absent; dates with no records are not added. */
+ * Missing weekdays are filled; real weekend records are preserved. */
 export async function fetchFastAttendanceReport(fromDate: string, toDate: string, token: string, signal?: AbortSignal): Promise<AttendanceRecord[]> {
   const start = parseDate(fromDate), end = parseDate(toDate);
   if (start > end) throw new Error('The start date must be on or before the end date.');
@@ -103,6 +171,7 @@ export async function fetchFastAttendanceReport(fromDate: string, toDate: string
       if (!date || date < fromDate || date > toDate || byDate.has(date)) throw new Error('PMS returned unexpected attendance dates.');
       parseDate(date);
       byDate.set(date, {
+        attendanceMissing: false, worklogs: [],
         Date: date, 'Employee Code': text(row['Employee Code']), 'Employee Name': text(row['Employee Name']),
         Department: text(row.Department), 'Employee Email Id': text(row['Employee Email Id']),
         'Reporting Manager Name': text(row['Reporting Manager Name'] ?? row['Reporting Manager']),
@@ -116,25 +185,19 @@ export async function fetchFastAttendanceReport(fromDate: string, toDate: string
       // PMS filters UTC date parts and may include adjacent India dates.
       const milliseconds = parseDate(date);
       if (milliseconds < start - DAY_MS || milliseconds > end + DAY_MS) throw new Error('PMS returned worklogs outside the requested range.');
-      const rawHours = log['Worklog Hours'];
-      if ((typeof rawHours !== 'number' && (typeof rawHours !== 'string' || !/^\d+(\.\d+)?$/.test(rawHours))) ||
-          !Number.isFinite(Number(rawHours)) || Number(rawHours) < 0) throw new Error('PMS returned invalid worklog hours.');
+      const entry = logEntry(log);
       if (date < fromDate || date > toDate) continue;
       const row = byDate.get(date) ?? { Date: date, 'Employee Name': text(log.Name), Department: text(log.Department),
-        'Employee Email Id': text(log['Email Id']), 'Attendance Type': 'Absent', 'Total Log Hours': 0, 'No of Times Logged': 0 };
-      row['Total Log Hours'] = Number(row['Total Log Hours'] ?? 0) + Number(rawHours);
+        'Employee Email Id': text(log['Email Id']), 'Attendance Type': 'Absent', 'Total Log Hours': 0, 'No of Times Logged': 0,
+        attendanceMissing: true, worklogs: [] };
+      row.worklogs!.push(entry);
+      row['Total Log Hours'] = Number(row['Total Log Hours'] ?? 0) + entry.hours;
       if (!Number.isFinite(row['Total Log Hours'])) throw new Error('PMS returned invalid total worklog hours.');
       row['No of Times Logged'] = Number(row['No of Times Logged'] ?? 0) + 1;
       row['Log Status'] = 'Logged';
       byDate.set(date, row);
     }
-    return [...byDate].sort(([a], [b]) => b.localeCompare(a)).map(([date, row], index) => {
-      const value = new Date(`${date}T00:00:00Z`);
-      return { ...row, Date: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(value).replace(/ /g, '-'),
-        Day: new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'UTC' }).format(value),
-        Month: new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(value), Year: String(value.getUTCFullYear()),
-        'S No': index + 1, 'Total Log Hours': Math.round(Number(row['Total Log Hours'] ?? 0) * 1e8) / 1e8 };
-    });
+    return completeAttendanceWeekdays([...byDate.values()], fromDate, toDate);
   } catch (error) {
     controller.abort();
     throw error;
