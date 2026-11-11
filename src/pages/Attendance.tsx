@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, RefreshCw, StopCircle } from 'lucide-react';
 import ReportTypeDropdown from '../components/attendance-report/ReportTypeDropdown';
 import DateRangePicker from '../components/attendance-report/DateRangePicker';
-import { fetchAttendanceReport, AttendanceRecord } from '../services/api';
+import { fetchAttendanceWithColumns, type AttendanceRecord } from '../services/api';
+import { FAST_ATTENDANCE_COLUMNS, needsDetailedAttendance } from '../services/attendanceReport';
 
 const REPORT_TYPES = ['This Week', 'Last Week', 'Today', 'Yesterday', 'Custom Date'];
 
@@ -98,7 +99,9 @@ const saveTableData = (data: AttendanceRecord[]): void => {
 };
 
 // Persistence utilities for last fetch dates (to validate cached data)
-const getSavedLastFetchDates = (): { from: string; to: string } | null => {
+type LastFetch = { from: string; to: string; detailLevel?: 'basic' | 'detailed' };
+
+const getSavedLastFetchDates = (): LastFetch | null => {
   try {
     const saved = localStorage.getItem(STORAGE_KEYS.LAST_FETCH_DATES);
     return saved ? JSON.parse(saved) : null;
@@ -108,9 +111,9 @@ const getSavedLastFetchDates = (): { from: string; to: string } | null => {
   }
 };
 
-const saveLastFetchDates = (from: string, to: string): void => {
+const saveLastFetchDates = (from: string, to: string, detailLevel: 'basic' | 'detailed'): void => {
   try {
-    localStorage.setItem(STORAGE_KEYS.LAST_FETCH_DATES, JSON.stringify({ from, to }));
+    localStorage.setItem(STORAGE_KEYS.LAST_FETCH_DATES, JSON.stringify({ from, to, detailLevel }));
   } catch (error) {
     console.error('Error saving last fetch dates to localStorage:', error);
   }
@@ -154,7 +157,7 @@ const TABLE_COLUMNS = [
 ];
 
 // Default visible columns
-const DEFAULT_VISIBLE_COLUMNS = [
+const LEGACY_DEFAULT_COLUMNS = [
   "Date",
   "Day",
   "In Time",
@@ -167,6 +170,7 @@ const DEFAULT_VISIBLE_COLUMNS = [
   "Log Status",
   "Total Log Hours"
 ];
+const DEFAULT_VISIBLE_COLUMNS = LEGACY_DEFAULT_COLUMNS.filter(column => FAST_ATTENDANCE_COLUMNS.has(column));
 
 // Helper function to format date as YYYY-MM-DD
 const formatDate = (date: Date): string => {
@@ -386,6 +390,8 @@ function Attendance() {
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(() => {
     const saved = getSavedColumns();
+    // Migrate only the previous recommended selection. Preserve custom views.
+    if (saved?.length === LEGACY_DEFAULT_COLUMNS.length && LEGACY_DEFAULT_COLUMNS.every(column => saved.includes(column))) return DEFAULT_VISIBLE_COLUMNS;
     return saved && saved.length > 0 ? saved : DEFAULT_VISIBLE_COLUMNS;
   });
 
@@ -409,6 +415,9 @@ function Attendance() {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [loadedDetailLevel, setLoadedDetailLevel] = useState<'basic' | 'detailed'>(() => getSavedLastFetchDates()?.detailLevel ?? 'detailed');
+  const needsDetails = needsDetailedAttendance(selectedColumns);
+  const detailsPending = needsDetails && loadedDetailLevel !== 'detailed' && attendanceData.length > 0;
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isSearchHovered, setIsSearchHovered] = useState(false);
@@ -479,7 +488,9 @@ function Attendance() {
     }
 
     // Create new abort controller
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const detailLevel = needsDetails ? 'detailed' : 'basic';
 
     setIsLoading(true);
     setError(null);
@@ -488,30 +499,33 @@ function Attendance() {
     startElapsedTimer();
 
     try {
-      const data = await fetchAttendanceReport(fromDate, toDate, abortControllerRef.current.signal);
+      const data = await fetchAttendanceWithColumns(fromDate, toDate, selectedColumns, controller.signal);
 
       // Check if request was aborted
-      if (abortControllerRef.current?.signal.aborted) {
+      if (controller.signal.aborted || abortControllerRef.current !== controller) {
         return;
       }
 
       setAttendanceData(data);
+      setLoadedDetailLevel(detailLevel);
 
       // Save to localStorage for persistence
       saveTableData(data);
-      saveLastFetchDates(fromDate, toDate);
+      saveLastFetchDates(fromDate, toDate, detailLevel);
     } catch (err) {
       // Don't show error if request was aborted
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
         return;
       }
       setError(err instanceof Error ? err.message : 'Failed to fetch attendance data');
       console.error('Error fetching attendance:', err);
     } finally {
-      stopElapsedTimer();
-      setIsLoading(false);
-      setElapsedTime(0);
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) {
+        stopElapsedTimer();
+        setIsLoading(false);
+        setElapsedTime(0);
+        abortControllerRef.current = null;
+      }
     }
   };
 
@@ -634,6 +648,7 @@ function Attendance() {
                 </label>
               </div>
               <div className="p-2 max-h-60 overflow-y-auto column-scroll">
+                <p className="px-2 pb-2 text-xs text-gray-400">Additional details use a slower report. Click Search after selecting them.</p>
                 {TABLE_COLUMNS.map(column => (
                   <label key={column.key} className="flex items-center p-2 hover:bg-[#2D3139] rounded cursor-pointer">
                     <input
@@ -643,6 +658,7 @@ function Attendance() {
                       className="mr-2"
                     />
                     <span className="text-sm text-white">{column.label}</span>
+                    {!FAST_ATTENDANCE_COLUMNS.has(column.key) && <span className="ml-auto pl-2 text-xs text-gray-400">Details</span>}
                   </label>
                 ))}
               </div>
@@ -694,6 +710,7 @@ function Attendance() {
             )}
           </button>
         </div>
+        {detailsPending && !isLoading && <p className="mt-2 text-right text-xs text-gray-400" role="status">Click Search to load the selected additional details.</p>}
       </div>
 
       {/* Table Section */}

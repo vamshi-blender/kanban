@@ -2,6 +2,7 @@ import { Task } from '../types';
 import { PublicClientApplication } from "@azure/msal-browser";
 import { msalConfig } from "../config/authConfig";
 import { getApiKey } from '../utils/apiKeyManager';
+import { fetchFastAttendanceReport, needsDetailedAttendance } from './attendanceReport';
 
 const API_URL = 'https://homeapi.quixy.com/api/Report/GetViewResult';
 
@@ -453,7 +454,7 @@ interface AttendanceReportPayload {
   isShowGrid: boolean;
 }
 
-export interface AttendanceRecord {
+interface DetailedAttendanceRecord {
   "S No": number;
   "Employee Code": string;
   "Attendance Id": string;
@@ -489,6 +490,13 @@ export interface AttendanceRecord {
   "Second Half": string;
 }
 
+// The fast reports do not contain approval, attendance-type or punch details.
+// Missing fields remain unknown rather than being fabricated from clock times.
+export interface AttendanceRecord extends Partial<DetailedAttendanceRecord> {
+  "Date": string;
+  "Total Log Hours": number;
+}
+
 interface AttendanceReportResponse {
   Status: boolean;
   results: string;
@@ -503,6 +511,16 @@ interface AttendanceReportResponse {
  * @returns Array of attendance records
  */
 export async function fetchAttendanceReport(fromDate: string, toDate: string, signal?: AbortSignal): Promise<AttendanceRecord[]> {
+  return fetchFastAttendanceReport(fromDate, toDate, getApiToken(), signal);
+}
+
+export async function fetchAttendanceWithColumns(fromDate: string, toDate: string, columns: readonly string[], signal?: AbortSignal): Promise<AttendanceRecord[]> {
+  return needsDetailedAttendance(columns)
+    ? fetchDetailedAttendanceReport(fromDate, toDate, signal)
+    : fetchAttendanceReport(fromDate, toDate, signal);
+}
+
+async function fetchDetailedAttendanceReport(fromDate: string, toDate: string, signal?: AbortSignal): Promise<AttendanceRecord[]> {
   const ATTENDANCE_API_URL = 'https://homeapi.quixy.com/api/Report/GetGridReportData';
   const REPORT_ID = '12092025-150408108-76d54cf3-0490-441a-bb2d-77eefd4f9ece';
   const PAGE_SIZE = 50;
